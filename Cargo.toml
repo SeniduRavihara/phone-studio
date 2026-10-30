@@ -1,0 +1,25 @@
+[package]
+name = "phone-studio"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+slint = { version = "=1.18.1", default-features = false, features = ["std", "backend-winit", "renderer-software", "compat-1-2"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rfd = "0.15"
+fs2 = "0.4"
+
+[build-dependencies]
+slint-build = "=1.18.1"
+
+[dev-dependencies]
+tempfile = "3"
+image = { version = "0.25", default-features = false, features = ["png"] }
+i-slint-backend-testing = { version = "=1.18.1", features = ["renderer-software"] }
+
+[profile.dev]
+debug = 0
+
+[profile.test]
+debug = 0

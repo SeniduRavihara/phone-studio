@@ -1,0 +1,320 @@
+import { ScrollView, TextEdit, LineEdit, Palette } from "std-widgets.slint";
+
+export struct DeviceRow { name: string, serial: string, state: string, transport: string, ready: bool }
+
+component AppButton inherits Rectangle {
+    in property <string> label;
+    in property <bool> active: true;
+    in property <bool> accent;
+    in property <bool> danger;
+    callback clicked();
+    height: 38px; min-width: 108px;
+    border-radius: 6px;
+    background: !root.active ? #20272e : root.danger ? (touch.has-hover ? #633c34 : #493028) : root.accent ? (touch.has-hover ? #a6f8df : #80e6c5) : touch.has-hover ? #35424e : #28343f;
+    border-width: 1px; border-color: root.danger ? #845141 : root.accent ? #80e6c5 : #3a4854;
+    opacity: root.active ? 1 : 0.45;
+    Text { text: root.label; color: !root.active ? #b2c0ca : root.accent ? #102821 : #e5edf2; font-size: 12px; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; }
+    touch := TouchArea { enabled: root.active; mouse-cursor: pointer; clicked => { root.clicked(); } }
+}
+component Card inherits Rectangle { background: #182129; border-radius: 9px; border-width: 1px; border-color: #2b3843; }
+component SmallLabel inherits Text { color: #8c9da9; font-size: 11px; font-weight: 600; }
+component ScrollArea inherits ScrollView {
+    in property <int> navigation-tick;
+    in property <int> navigation-direction;
+    changed navigation-tick => {
+        self.content-y = min(0px, max(self.visible-height - self.content-height, self.content-y + root.navigation-direction * max(100px, self.visible-height * 0.8)));
+    }
+}
+component ScrollableText inherits TextEdit {
+    in property <int> navigation-tick;
+    in property <int> navigation-direction;
+    read-only: true; wrap: word-wrap; font-size: 13px;
+    changed navigation-tick => {
+        self.content-y = min(0px, max(self.visible-height - self.content-height, self.content-y + root.navigation-direction * max(100px, self.visible-height * 0.8)));
+    }
+}
+
+export component PhoneStudio inherits Window {
+    title: "Phone Studio · Device service workspace";
+    preferred-width: 1120px; preferred-height: 680px;
+    min-width: 960px; min-height: 520px;
+    background: #10171d; default-font-family: "DejaVu Sans"; default-font-size: 13px;
+    init => { Palette.color-scheme = ColorScheme.dark; }
+    in property <[DeviceRow]> devices;
+    in property <int> selected: -1;
+    in property <int> page: 0;
+    in-out property <int> navigation-tick;
+    in-out property <int> navigation-direction;
+    in-out property <length> workspace-scroll-y;
+    in-out property <length> report-scroll-y;
+    in-out property <length> logs-scroll-y;
+    out property <length> minimum-window-height: root.min-height;
+    in property <bool> busy;
+    in property <bool> demo;
+    in property <bool> ready;
+    in property <bool> adb-ready;
+    in property <bool> needs-authorization;
+    in property <bool> can-unlock;
+    in property <bool> has-report;
+    in property <bool> has-diagnostics;
+    in property <bool> confirm-open;
+    in property <bool> confirm-erase;
+    in property <string> confirm-title;
+    in property <string> confirm-body;
+    in property <string> confirm-serial;
+    in property <string> device-title: "Your next repair starts here";
+    in property <string> device-serial: "Connect an Android phone over USB";
+    in property <string> connection: "Waiting for device";
+    in property <string> status: "Ready · scan to connect";
+    in property <string> detail: "Select a phone, then choose Read device. The report will appear here.";
+    in property <string> logs-text: "Collect system logs from Workspace to view them here.";
+    in property <string> activity: "Session ready. No commands have been sent.";
+    in property <string> tools-text;
+    in property <string> versions-text: "Choose Check tools to verify the installed versions.";
+    in property <string> unlock-text: "Enter Fastboot mode and read the device to check official unlock permission.";
+    in property <string> help-text: "Enable USB debugging on your phone, connect a data cable, and approve this computer when prompted.";
+    callback scan(); callback cancel(); callback select-device(int); callback navigate(int);
+    callback close-app(); callback scroll-page(int);
+    scroll-page(direction) => { root.navigation-direction = direction; root.navigation-tick += 1; }
+    callback action(int); callback choose-tools(); callback auto-tools(); callback check-tools();
+    callback export-report(); callback export-diagnostics(); callback confirm-action(string, string); callback dismiss-confirm();
+
+    VerticalLayout {
+        spacing: 0; padding: 0;
+        Rectangle {
+            height: 72px; background: #151f27;
+            HorizontalLayout {
+                padding-left: 26px; padding-right: 24px; spacing: 14px;
+                Rectangle { width: 32px; background: transparent;
+                    Rectangle { y: (parent.height - self.height) / 2; width: 32px; height: 34px; border-radius: 9px; background: #80e6c5;
+                        Text { text: "P"; color: #122a23; font-size: 23px; font-weight: 800; horizontal-alignment: center; vertical-alignment: center; }
+                    }
+                }
+                VerticalLayout { spacing: 3px; alignment: center;
+                    Text { text: "Phone Studio"; color: #f1f6f9; font-size: 20px; font-weight: 700; }
+                    Text { text: "DEVICE SERVICE WORKSPACE"; color: #8b9daa; font-size: 9px; letter-spacing: 1.2px; }
+                }
+                Rectangle { horizontal-stretch: 1; background: transparent; }
+                Text { text: root.demo ? "DEMO SESSION · NO DEVICE COMMANDS" : "LOCAL SESSION"; color: root.demo ? #edbd83 : #80e6c5; font-size: 11px; font-weight: 600; vertical-alignment: center; }
+                Rectangle { width: 1px; background: transparent; Rectangle { y: (parent.height - self.height) / 2; width: 1px; height: 24px; background: #34424e; } }
+                Text { text: "BUILD 0.1.2"; color: #91a2ae; font-size: 11px; vertical-alignment: center; }
+                Rectangle { width: 108px; background: transparent;
+                    AppButton { y: (parent.height - self.height) / 2; width: 108px; height: 34px; label: "Close ×"; clicked => { root.close-app(); } }
+                }
+            }
+        }
+        HorizontalLayout {
+            spacing: 0;
+            Rectangle {
+                width: 270px; background: #131c23;
+                VerticalLayout {
+                    padding: 20px; spacing: 16px;
+                    HorizontalLayout { SmallLabel { text: "CONNECTED DEVICES"; horizontal-stretch: 1; } Text { text: root.devices.length; color: #80e6c5; font-weight: 700; } }
+                    AppButton { label: root.busy ? "Working…" : "Scan USB devices"; accent: true; active: !root.busy && !root.confirm-open; clicked => { root.scan(); } }
+                    ScrollView {
+                        vertical-stretch: 1;
+                        VerticalLayout {
+                            spacing: 9px;
+                            if root.devices.length == 0: Rectangle {
+                                height: 155px; background: #18232c; border-radius: 7px;
+                                VerticalLayout { padding: 14px; spacing: 12px; alignment: start;
+                                    Text { text: "No phones detected"; color: #e3ecf1; font-weight: 600; }
+                                    Text { text: "Connect a USB data cable and scan. Check Setup if ADB or Fastboot is missing."; color: #8fa2b0; wrap: word-wrap; font-size: 12px; }
+                                }
+                            }
+                            for device[i] in root.devices: Rectangle {
+                                height: 96px; border-radius: 7px; border-width: 1px;
+                                border-color: root.selected == i ? #71ccaf : #2c3b47;
+                                background: root.selected == i ? #203b36 : device-touch.has-hover ? #24303a : #1a252e;
+                                VerticalLayout { padding: 13px; spacing: 6px;
+                                    Text { text: device.name; color: #edf4f7; font-weight: 600; overflow: elide; }
+                                    Text { text: device.serial; color: #9db1bd; font-size: 10px; overflow: elide; }
+                                    Text { text: device.transport + "  /  " + device.state; color: device.ready ? #8ce9ca : #edbd83; font-size: 11px; overflow: elide; }
+                                }
+                                device-touch := TouchArea { enabled: !root.busy && !root.confirm-open; mouse-cursor: pointer; clicked => { root.select-device(i); } }
+                            }
+                        }
+                    }
+                    Rectangle { height: 1px; background: #2a3842; }
+                    SmallLabel { text: "SUPPORT ROADMAP"; }
+                    Text { text: "Android · ADB & standard Fastboot"; color: #b5c7d1; wrap: word-wrap; font-size: 11px; }
+                    Text { text: "Samsung & iPhone · planned"; color: #708591; font-size: 11px; }
+                    AppButton { label: "Tools & setup"; clicked => { root.navigate(3); } }
+                }
+            }
+            VerticalLayout {
+                padding: 24px; spacing: 20px;
+                HorizontalLayout {
+                    height: 36px; spacing: 8px;
+                    for title[i] in ["Workspace", "Device report", "Activity", "Setup", "Logs"]: Rectangle {
+                        width: i == 1 ? 112px : i == 3 ? 70px : i == 4 ? 80px : 88px; height: 36px; border-radius: 6px;
+                        background: root.page == i ? #26363f : transparent;
+                        Text { text: title; color: root.page == i ? #93f1d3 : #93a5b2; font-size: 12px; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; }
+                        TouchArea { mouse-cursor: pointer; clicked => { root.navigate(i); } }
+                    }
+                    Rectangle { horizontal-stretch: 1; background: transparent; }
+                    AppButton { label: "Cancel task"; active: root.busy; clicked => { root.cancel(); } }
+                }
+                if root.page == 0: ScrollArea {
+                    navigation-tick: root.navigation-tick; navigation-direction: root.navigation-direction;
+                    content-y <=> root.workspace-scroll-y;
+                    vertical-scrollbar-policy: always-on;
+                    vertical-stretch: 1;
+                    VerticalLayout {
+                        spacing: 16px;
+                        Card {
+                            height: 185px;
+                            HorizontalLayout { padding: 25px; spacing: 24px;
+                                VerticalLayout { spacing: 11px; alignment: center; horizontal-stretch: 1;
+                                    SmallLabel { text: "DEVICE WORKSPACE"; }
+                                    Text { text: root.device-title; color: #eff5f7; font-size: 25px; font-weight: 700; overflow: elide; }
+                                    Text { text: root.device-serial; color: #9db1bc; font-size: 12px; overflow: elide; }
+                                    Text { text: root.connection; color: root.ready ? #8ce9ca : #edbd83; font-size: 12px; }
+                                }
+                                Rectangle { width: 75px; height: 132px; border-radius: 15px; border-width: 2px; border-color: #53776c; background: #101a20;
+                                    Rectangle { x: 7px; y: 7px; width: 61px; height: 117px; border-radius: 10px; background: #24423b;
+                                        Rectangle { x: 23px; y: 7px; width: 15px; height: 4px; border-radius: 2px; background: #101a20; }
+                                        Text { text: "USB"; color: #8ce9ca; font-size: 12px; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; }
+                                    }
+                                }
+                            }
+                        }
+                        Card {
+                            height: 100px;
+                            VerticalLayout { padding: 18px; spacing: 9px;
+                                Text { text: root.needs-authorization ? "Approve USB debugging on your phone" : "Connection checklist"; color: root.needs-authorization ? #edbd83 : #e4edf2; font-size: 13px; font-weight: 600; }
+                                Text { text: root.help-text; color: #9fb1bd; font-size: 12px; wrap: word-wrap; }
+                            }
+                        }
+                        SmallLabel { text: "DIAGNOSTICS"; }
+                        HorizontalLayout { spacing: 10px;
+                            AppButton { label: "Read device"; accent: true; active: root.ready && !root.busy && !root.confirm-open; clicked => { root.action(0); } }
+                            AppButton { label: "Collect system logs"; active: root.adb-ready && !root.busy && !root.confirm-open; clicked => { root.action(1); } }
+                            AppButton { label: "Export report"; active: root.has-report && !root.busy; clicked => { root.export-report(); } }
+                        }
+                        SmallLabel { text: "DEVICE CONTROLS"; }
+                        HorizontalLayout { spacing: 10px;
+                            AppButton { label: "Restart phone"; active: root.ready && !root.busy && !root.demo && !root.confirm-open; clicked => { root.action(2); } }
+                            AppButton { label: "Enter bootloader"; active: root.ready && !root.busy && !root.demo && !root.confirm-open; clicked => { root.action(3); } }
+                            AppButton { label: "Enter recovery"; active: root.adb-ready && !root.busy && !root.demo && !root.confirm-open; clicked => { root.action(4); } }
+                        }
+                        Card {
+                            min-height: 146px;
+                            VerticalLayout { padding: 18px; spacing: 13px;
+                                HorizontalLayout {
+                                    Text { text: "Official bootloader unlock"; color: #e7edf1; font-size: 14px; font-weight: 600; horizontal-stretch: 1; }
+                                    Text { text: "ERASES USER DATA"; color: #edbd83; font-size: 10px; font-weight: 700; }
+                                }
+                                Text { text: root.unlock-text; color: #a6b7c1; font-size: 12px; wrap: word-wrap; }
+                                HorizontalLayout { spacing: 14px;
+                                    AppButton { width: 150px; label: "Review unlock"; active: root.can-unlock && !root.busy && !root.demo && !root.confirm-open; danger: true; clicked => { root.action(5); } }
+                                    Text { text: "Requires permission from the bootloader and confirmation on the phone."; color: #8095a2; font-size: 11px; wrap: word-wrap; vertical-alignment: center; horizontal-stretch: 1; }
+                                }
+                            }
+                        }
+                        Text { text: "STANDARD FASTBOOT WORKFLOW · Hardware compatibility is not yet certified. Screen PIN, account-lock and carrier services are outside this release."; color: #6f8593; font-size: 10px; wrap: word-wrap; }
+                    }
+                }
+                if root.page == 1: Card {
+                    vertical-stretch: 1;
+                    VerticalLayout { padding: 22px; spacing: 18px;
+                        HorizontalLayout {
+                            Text { text: "Device report"; color: #eef4f7; font-size: 22px; font-weight: 700; horizontal-stretch: 1; }
+                            AppButton { width: 160px; label: "Save JSON report"; active: root.has-report && !root.busy; clicked => { root.export-report(); } }
+                        }
+                        ScrollableText {
+                            navigation-tick: root.navigation-tick; navigation-direction: root.navigation-direction;
+                            vertical-stretch: 1; read-only: true; wrap: word-wrap; font-size: 13px;
+                            text: root.detail;
+                            content-y <=> root.report-scroll-y;
+                        }
+                    }
+                }
+                if root.page == 2: Card {
+                    vertical-stretch: 1;
+                    VerticalLayout { padding: 22px; spacing: 18px;
+                        HorizontalLayout {
+                            Text { text: "Session activity"; color: #eef4f7; font-size: 22px; font-weight: 700; horizontal-stretch: 1; }
+                            AppButton { width: 160px; label: "Save system logs"; active: root.has-diagnostics && !root.busy; clicked => { root.export-diagnostics(); } }
+                        }
+                        Text { text: "Task results stay in this session. Reports and collected logs are saved only when you export them."; color: #8da3b0; font-size: 12px; wrap: word-wrap; }
+                        ScrollableText {
+                            navigation-tick: root.navigation-tick; navigation-direction: root.navigation-direction;
+                            vertical-stretch: 1; read-only: true; wrap: word-wrap; font-size: 13px;
+                            text: root.activity;
+                        }
+                    }
+                }
+                if root.page == 3: Card {
+                    vertical-stretch: 1;
+                    VerticalLayout { padding: 22px; spacing: 18px;
+                        Text { text: "Tools & setup"; color: #eef4f7; font-size: 22px; font-weight: 700; }
+                        Text { text: "Install Google's official Android SDK Platform-Tools, then choose the folder containing adb and fastboot. Windows also needs the appropriate USB driver for your phone."; color: #a5bac7; wrap: word-wrap; }
+                        HorizontalLayout { spacing: 10px;
+                            AppButton { label: "Choose tools folder"; active: !root.busy && !root.demo && !root.confirm-open; accent: true; clicked => { root.choose-tools(); } }
+                            AppButton { label: "Auto-detect"; active: !root.busy && !root.demo && !root.confirm-open; clicked => { root.auto-tools(); } }
+                            AppButton { label: "Check tools"; active: !root.busy && !root.confirm-open; clicked => { root.check-tools(); } }
+                        }
+                        ScrollableText {
+                            navigation-tick: root.navigation-tick; navigation-direction: root.navigation-direction;
+                            vertical-stretch: 1; read-only: true; wrap: word-wrap; font-size: 13px;
+                            text: root.tools-text + "\n\n" + root.versions-text + "\n\nOfficial download:\ndeveloper.android.com/tools/releases/platform-tools\n\nAndroid connection\n1. Enable Developer options and USB debugging.\n2. Connect a USB data cable.\n3. Unlock the screen and approve this computer.\n4. Scan devices, select the phone, and read it.\n\nBootloader unlocking\nBack up data first. Enable OEM unlocking in Android if your manufacturer permits it. Enter the bootloader and read the phone again. Review unlock is enabled only if the standard permission and lock-state queries confirm eligibility. Manufacturer-specific token flows are not implemented.\n\nNever disconnect during an operation. Cancellation stops the computer's tool; a command already accepted by the phone may still finish.";
+                        }
+                    }
+                }
+                if root.page == 4: Card {
+                    vertical-stretch: 1;
+                    VerticalLayout { padding: 22px; spacing: 18px;
+                        HorizontalLayout {
+                            Text { text: "System logs"; color: #eef4f7; font-size: 22px; font-weight: 700; horizontal-stretch: 1; }
+                            AppButton { width: 160px; label: "Save system logs"; active: root.has-diagnostics && !root.busy; clicked => { root.export-diagnostics(); } }
+                        }
+                        Text { text: "These are Android system messages. Model, Android version and build information are in Device report."; color: #8da3b0; font-size: 12px; wrap: word-wrap; }
+                        ScrollableText {
+                            navigation-tick: root.navigation-tick; navigation-direction: root.navigation-direction;
+                            vertical-stretch: 1; read-only: true; wrap: word-wrap; font-size: 13px;
+                            text: root.logs-text;
+                            content-y <=> root.logs-scroll-y;
+                        }
+                    }
+                }
+            }
+        }
+        Rectangle { height: 46px; background: #131e26;
+            HorizontalLayout { padding-left: 20px; padding-right: 20px; spacing: 12px;
+                Text { text: "Scroll with the mouse wheel or these buttons"; color: #8fa5b3; font-size: 11px; vertical-alignment: center; horizontal-stretch: 1; }
+                AppButton { width: 120px; label: "↑ Scroll up"; active: !root.confirm-open; clicked => { root.scroll-page(1); } }
+                AppButton { width: 120px; label: "↓ Scroll down"; active: !root.confirm-open; clicked => { root.scroll-page(-1); } }
+                AppButton { width: 120px; label: "Close app"; active: !root.confirm-open; clicked => { root.close-app(); } }
+            }
+        }
+        Rectangle { height: 35px; background: #17232c;
+            HorizontalLayout { padding-left: 20px; padding-right: 20px; spacing: 12px;
+                Rectangle { width: 6px; background: transparent; Rectangle { y: (parent.height - self.height) / 2; width: 6px; height: 6px; border-radius: 3px; background: root.busy ? #edbd83 : #80e6c5; } }
+                Text { text: root.status; color: #9cb0bd; font-size: 11px; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; }
+                Text { text: root.demo ? "SIMULATED DATA" : "USB / LOCAL"; color: #657e8e; font-size: 10px; vertical-alignment: center; }
+            }
+        }
+    }
+    if root.confirm-open: Rectangle {
+        x: 0; y: 0; width: root.width; height: root.height; background: #000b;
+        TouchArea { }
+        Card {
+            width: 590px; height: root.confirm-erase ? 480px : 390px;
+            x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2;
+            VerticalLayout { padding: 28px; spacing: 16px;
+                Text { text: root.confirm-title; color: #f0f5f7; font-size: 22px; font-weight: 700; }
+                Text { text: root.confirm-body; color: #b0c2ce; font-size: 13px; wrap: word-wrap; }
+                Text { text: "Selected serial: " + root.confirm-serial; color: #80e6c5; font-size: 12px; wrap: word-wrap; }
+                serial-input := LineEdit { placeholder-text: "Type the selected serial to confirm"; }
+                if root.confirm-erase: Text { text: "Type ERASE to accept permanent loss of user data."; color: #edbd83; font-size: 12px; }
+                erase-input := LineEdit { visible: root.confirm-erase; placeholder-text: "ERASE"; }
+                Rectangle { vertical-stretch: 1; background: transparent; }
+                HorizontalLayout { spacing: 12px;
+                    AppButton { label: "Go back"; clicked => { root.dismiss-confirm(); } }
+                    AppButton { label: root.confirm-erase ? "Send unlock request" : "Confirm reboot"; danger: root.confirm-erase; accent: !root.confirm-erase; active: serial-input.text == root.confirm-serial && (!root.confirm-erase || erase-input.text == "ERASE"); clicked => { root.confirm-action(serial-input.text, erase-input.text); } }
+                }
+            }
+        }
+    }
+}
